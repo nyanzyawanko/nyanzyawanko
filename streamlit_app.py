@@ -1,64 +1,112 @@
 import random
-import time
+import threading
 
-# 関数：暗算問題を出題
-def math_practice():
-    # ランダムに問題の種類を選択（加算、引き算、掛け算、割り算）
-    operation = random.choice(['+', '-', '*', '/'])
+user_answer = None
 
-    if operation == '+':
-        num1 = random.randint(1, 9)
-        num2 = random.randint(1, 9)
-        question = f"{num1} + {num2} = ?"
-        correct_answer = num1 + num2
+def timed_input(prompt, timeout):
+    def get_input():
+        global user_answer
+        user_answer = input(prompt)
 
-    elif operation == '-':
-        num1 = random.randint(1, 9)
-        num2 = random.randint(1, num1)  # 引き算なので、num2 <= num1に設定
-        question = f"{num1} - {num2} = ?"
-        correct_answer = num1 - num2
+    global user_answer
+    user_answer = None
+    thread = threading.Thread(target=get_input)
+    thread.start()
+    thread.join(timeout)
 
-    elif operation == '*':
-        num1 = random.randint(1, 9)
-        num2 = random.randint(1, 9)
-        question = f"{num1} * {num2} = ?"
-        correct_answer = num1 * num2
+    if thread.is_alive():
+        print("\n時間切れ！")
+        return None
+    return user_answer
 
-    elif operation == '/':
-        num2 = random.randint(1, 9)
-        correct_answer = random.randint(1, 9)
-        num1 = correct_answer * num2  # 割り算のため、num1 は num2 と正確に割り切れるように設定
-        question = f"{num1} / {num2} = ?"
+def generate_mul_div_problem(level):
+    if level == 1:
+        a = random.randint(1, 9)
+        b = random.randint(1, 9)
+        op = random.choice(['*', '/'])
+        if op == '*':
+            question = f"{a} × {b}"
+            answer = a * b
+        else:
+            answer = a
+            dividend = a * b
+            question = f"{dividend} ÷ {b}"
 
-    print("問題:", question)
+    elif level == 2:
+        a = random.randint(10, 99)
+        b = random.randint(1, 9)
+        op = random.choice(['*', '/'])
+        if op == '*':
+            question = f"{a} × {b}"
+            answer = a * b
+        else:
+            answer = a
+            dividend = a * b
+            question = f"{dividend} ÷ {b}"
 
-    # タイマー開始
-    start_time = time.time()
-
-    # ユーザーに解答を求める
-    answer = float(input("答えを入力してください: "))  # 小数にも対応
-
-    # タイマー終了
-    end_time = time.time()
-
-    # 正誤判定
-    if answer == correct_answer:
-        print("正解！")
+    elif level == 3:
+        op = random.choice(['*', '/'])
+        if op == '*':
+            # 2桁 × 2桁
+            a = random.randint(10, 99)
+            b = random.randint(10, 99)
+            question = f"{a} × {b}"
+            answer = a * b
+        else:
+            # 3桁 ÷ 2桁（割り切れるように生成）
+            b = random.randint(10, 99)
+            a = random.randint(100, 999) // b
+            dividend = a * b
+            question = f"{dividend} ÷ {b}"
+            answer = a
     else:
-        print(f"不正解... 正解は {correct_answer} です。")
-    
-    # 経過時間表示
-    elapsed_time = end_time - start_time
-    print(f"解答にかかった時間: {elapsed_time:.2f} 秒")
+        raise ValueError("レベルは1〜3のみ対応")
 
-# 練習の繰り返し
-def main():
+    return question, answer
+
+def get_time_limit(level):
+    return {1: 5, 2: 10, 3: 20}.get(level, 10)
+
+def mental_math_trainer(num_questions=5, level=1):
+    time_limit = get_time_limit(level)
+    print(f"\n📘 レベル {level}｜1問{time_limit}秒以内に回答してください（全{num_questions}問）")
+    score = 0
+
+    for i in range(num_questions):
+        q, ans = generate_mul_div_problem(level)
+        print(f"\n問題 {i+1}: {q} = ?")
+
+        response = timed_input("答え: ", timeout=time_limit)
+
+        if response is None:
+            print(f"→ 時間切れ。不正解。正解は {ans} です。")
+        else:
+            try:
+                if int(response) == ans:
+                    print("→ 正解！")
+                    score += 1
+                else:
+                    print(f"→ 不正解。正解は {ans} です。")
+            except:
+                print(f"→ 無効な入力。正解は {ans} です。")
+
+    print(f"\n✅ 結果: {score}/{num_questions} 正解")
+
+def select_difficulty():
+    print("🧠 難易度を選んでください：")
+    print("1: 九九（1桁×1桁、÷1桁）【5秒】")
+    print("2: 中級（2桁×1桁、÷1桁）【10秒】")
+    print("3: 上級（2桁×2桁 または 3桁÷2桁）【20秒】")
     while True:
-        math_practice()
-        again = input("もう一度練習しますか？ (y/n): ").strip().lower()
-        if again != 'y':
-            print("練習を終了します。お疲れ様でした！")
-            break
+        try:
+            level = int(input("レベルを入力（1～3）: "))
+            if level in [1, 2, 3]:
+                return level
+        except:
+            pass
+        print("無効な入力です。1〜3を選んでください。")
 
+# 実行
 if __name__ == "__main__":
-    main()
+    level = select_difficulty()
+    mental_math_trainer(num_questions=5, level=level)
