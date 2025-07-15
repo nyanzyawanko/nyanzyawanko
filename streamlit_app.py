@@ -1,305 +1,390 @@
-import streamlit as st
-import random
-import time
-import pandas as pd
-from datetime import datetime
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Pause, RotateCcw, Trophy, Clock, Calculator } from 'lucide-react';
 
-# ページ設定
-st.set_page_config(
-    page_title="高速暗算練習アプリ",
-    page_icon="🧮",
-    layout="wide"
-)
+const MentalMathApp = () => {
+  const [currentOperation, setCurrentOperation] = useState('addition');
+  const [currentLevel, setCurrentLevel] = useState('beginner');
+  const [gameState, setGameState] = useState('menu'); // menu, playing, paused, finished
+  const [problem, setProblem] = useState(null);
+  const [userAnswer, setUserAnswer] = useState('');
+  const [score, setScore] = useState(0);
+  const [totalProblems, setTotalProblems] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [streak, setStreak] = useState(0);
+  const [bestStreak, setBestStreak] = useState(0);
+  const [feedback, setFeedback] = useState('');
+  const [isCorrect, setIsCorrect] = useState(null);
+  
+  const timerRef = useRef(null);
+  const inputRef = useRef(null);
 
-# セッション状態の初期化
-if 'game_state' not in st.session_state:
-    st.session_state.game_state = 'menu'
-if 'score' not in st.session_state:
-    st.session_state.score = 0
-if 'question_count' not in st.session_state:
-    st.session_state.question_count = 0
-if 'total_questions' not in st.session_state:
-    st.session_state.total_questions = 10
-if 'start_time' not in st.session_state:
-    st.session_state.start_time = None
-if 'current_question' not in st.session_state:
-    st.session_state.current_question = None
-if 'current_answer' not in st.session_state:
-    st.session_state.current_answer = None
-if 'difficulty' not in st.session_state:
-    st.session_state.difficulty = 'medium'
-if 'operation' not in st.session_state:
-    st.session_state.operation = 'mixed'
-if 'history' not in st.session_state:
-    st.session_state.history = []
-
-def generate_question(difficulty, operation):
-    """問題を生成する関数"""
-    if difficulty == 'easy':
-        range_min, range_max = 1, 20
-    elif difficulty == 'medium':
-        range_min, range_max = 1, 100
-    elif difficulty == 'hard':
-        range_min, range_max = 10, 500
-    else:  # expert
-        range_min, range_max = 50, 1000
-    
-    if operation == 'mixed':
-        op = random.choice(['+', '-', '*'])
-    else:
-        op = operation
-    
-    if op == '+':
-        a = random.randint(range_min, range_max)
-        b = random.randint(range_min, range_max)
-        question = f"{a} + {b}"
-        answer = a + b
-    elif op == '-':
-        a = random.randint(range_min, range_max)
-        b = random.randint(range_min, a)  # 負の数を避ける
-        question = f"{a} - {b}"
-        answer = a - b
-    elif op == '*':
-        if difficulty == 'easy':
-            a = random.randint(1, 12)
-            b = random.randint(1, 12)
-        elif difficulty == 'medium':
-            a = random.randint(1, 20)
-            b = random.randint(1, 20)
-        else:
-            a = random.randint(2, 50)
-            b = random.randint(2, 50)
-        question = f"{a} × {b}"
-        answer = a * b
-    
-    return question, answer
-
-def reset_game():
-    """ゲームをリセットする関数"""
-    st.session_state.game_state = 'menu'
-    st.session_state.score = 0
-    st.session_state.question_count = 0
-    st.session_state.start_time = None
-    st.session_state.current_question = None
-    st.session_state.current_answer = None
-
-def start_game():
-    """ゲームを開始する関数"""
-    st.session_state.game_state = 'playing'
-    st.session_state.score = 0
-    st.session_state.question_count = 0
-    st.session_state.start_time = time.time()
-    question, answer = generate_question(st.session_state.difficulty, st.session_state.operation)
-    st.session_state.current_question = question
-    st.session_state.current_answer = answer
-
-def next_question():
-    """次の問題に進む関数"""
-    if st.session_state.question_count >= st.session_state.total_questions:
-        st.session_state.game_state = 'finished'
-        # 結果を履歴に追加
-        end_time = time.time()
-        total_time = end_time - st.session_state.start_time
-        accuracy = (st.session_state.score / st.session_state.total_questions) * 100
-        
-        st.session_state.history.append({
-            'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
-            'difficulty': st.session_state.difficulty,
-            'operation': st.session_state.operation,
-            'score': st.session_state.score,
-            'total': st.session_state.total_questions,
-            'accuracy': f"{accuracy:.1f}%",
-            'time': f"{total_time:.1f}秒",
-            'avg_time': f"{total_time/st.session_state.total_questions:.1f}秒/問"
-        })
-    else:
-        question, answer = generate_question(st.session_state.difficulty, st.session_state.operation)
-        st.session_state.current_question = question
-        st.session_state.current_answer = answer
-
-# メインアプリケーション
-st.title("🧮 高速暗算練習アプリ")
-
-# サイドバー設定
-with st.sidebar:
-    st.header("⚙️ 設定")
-    
-    # 難易度設定
-    difficulty_options = {
-        'easy': '初級 (1-20)',
-        'medium': '中級 (1-100)',
-        'hard': '上級 (10-500)',
-        'expert': '専門家 (50-1000)'
+  const operations = {
+    addition: {
+      name: '足し算',
+      symbol: '+',
+      levels: {
+        beginner: { name: '初級 (1桁+1桁)', timeLimit: 5, generate: () => generateAddition(1, 1) },
+        intermediate: { name: '中級 (2桁+2桁)', timeLimit: 15, generate: () => generateAddition(2, 2) },
+        advanced: { name: '上級 (3桁+3桁)', timeLimit: 25, generate: () => generateAddition(3, 3) }
+      }
+    },
+    subtraction: {
+      name: '引き算',
+      symbol: '-',
+      levels: {
+        beginner: { name: '初級 (1桁-1桁)', timeLimit: 5, generate: () => generateSubtraction(1, 1) },
+        intermediate: { name: '中級 (2桁-2桁)', timeLimit: 15, generate: () => generateSubtraction(2, 2) },
+        advanced: { name: '上級 (3桁-3桁)', timeLimit: 25, generate: () => generateSubtraction(3, 3) }
+      }
+    },
+    multiplication: {
+      name: '掛け算',
+      symbol: '×',
+      levels: {
+        beginner: { name: '初級 (1桁×1桁)', timeLimit: 5, generate: () => generateMultiplication(1, 1) },
+        intermediate: { name: '中級 (2桁×1桁)', timeLimit: 15, generate: () => generateMultiplication(2, 1) },
+        advanced: { name: '上級 (2桁×2桁)', timeLimit: 25, generate: () => generateMultiplication(2, 2) }
+      }
+    },
+    division: {
+      name: '割り算',
+      symbol: '÷',
+      levels: {
+        beginner: { name: '初級 (2桁÷1桁)', timeLimit: 10, generate: () => generateDivision(2, 1) },
+        intermediate: { name: '中級 (3桁÷1桁)', timeLimit: 20, generate: () => generateDivision(3, 1) },
+        advanced: { name: '上級 (3桁÷2桁)', timeLimit: 30, generate: () => generateDivision(3, 2) }
+      }
     }
-    st.session_state.difficulty = st.selectbox(
-        "難易度",
-        options=list(difficulty_options.keys()),
-        format_func=lambda x: difficulty_options[x],
-        index=list(difficulty_options.keys()).index(st.session_state.difficulty)
-    )
-    
-    # 演算設定
-    operation_options = {
-        'mixed': 'ミックス',
-        '+': '足し算',
-        '-': '引き算',
-        '*': '掛け算'
+  };
+
+  function generateNumber(digits) {
+    const min = Math.pow(10, digits - 1);
+    const max = Math.pow(10, digits) - 1;
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function generateAddition(digits1, digits2) {
+    const num1 = digits1 === 1 ? Math.floor(Math.random() * 9) + 1 : generateNumber(digits1);
+    const num2 = digits2 === 1 ? Math.floor(Math.random() * 9) + 1 : generateNumber(digits2);
+    return { num1, num2, answer: num1 + num2 };
+  }
+
+  function generateSubtraction(digits1, digits2) {
+    const num1 = digits1 === 1 ? Math.floor(Math.random() * 9) + 1 : generateNumber(digits1);
+    const num2 = digits2 === 1 ? Math.floor(Math.random() * Math.min(9, num1)) + 1 : 
+                  Math.floor(Math.random() * num1) + 1;
+    return { num1, num2, answer: num1 - num2 };
+  }
+
+  function generateMultiplication(digits1, digits2) {
+    const num1 = digits1 === 1 ? Math.floor(Math.random() * 9) + 1 : generateNumber(digits1);
+    const num2 = digits2 === 1 ? Math.floor(Math.random() * 9) + 1 : generateNumber(digits2);
+    return { num1, num2, answer: num1 * num2 };
+  }
+
+  function generateDivision(dividendDigits, divisorDigits) {
+    const divisor = divisorDigits === 1 ? Math.floor(Math.random() * 9) + 1 : generateNumber(divisorDigits);
+    const quotient = dividendDigits === 2 ? Math.floor(Math.random() * 9) + 1 : generateNumber(dividendDigits - 1);
+    const dividend = divisor * quotient;
+    return { num1: dividend, num2: divisor, answer: quotient };
+  }
+
+  function generateProblem() {
+    const currentConfig = operations[currentOperation].levels[currentLevel];
+    const newProblem = currentConfig.generate();
+    setProblem(newProblem);
+    setTimeLeft(currentConfig.timeLimit);
+    setUserAnswer('');
+    setFeedback('');
+    setIsCorrect(null);
+  }
+
+  function startGame() {
+    setGameState('playing');
+    setScore(0);
+    setTotalProblems(0);
+    setStreak(0);
+    generateProblem();
+    if (inputRef.current) {
+      inputRef.current.focus();
     }
-    st.session_state.operation = st.selectbox(
-        "演算種類",
-        options=list(operation_options.keys()),
-        format_func=lambda x: operation_options[x],
-        index=list(operation_options.keys()).index(st.session_state.operation)
-    )
-    
-    # 問題数設定
-    st.session_state.total_questions = st.slider(
-        "問題数",
-        min_value=5,
-        max_value=50,
-        value=st.session_state.total_questions,
-        step=5
-    )
-    
-    st.divider()
-    
-    # ゲームリセット
-    if st.button("🔄 リセット"):
-        reset_game()
-        st.rerun()
+  }
 
-# メインコンテンツ
-if st.session_state.game_state == 'menu':
-    st.header("🎯 ゲームスタート")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.info(f"""
-        **現在の設定:**
-        - 難易度: {difficulty_options[st.session_state.difficulty]}
-        - 演算: {operation_options[st.session_state.operation]}
-        - 問題数: {st.session_state.total_questions}問
-        """)
-    
-    with col2:
-        st.success("""
-        **遊び方:**
-        1. 設定を確認してスタートボタンを押す
-        2. 表示された問題を暗算で解く
-        3. 答えを入力してEnterを押す
-        4. 制限時間内にできるだけ多く正解しよう！
-        """)
-    
-    if st.button("🚀 ゲームスタート", type="primary", use_container_width=True):
-        start_game()
-        st.rerun()
+  function pauseGame() {
+    setGameState('paused');
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+  }
 
-elif st.session_state.game_state == 'playing':
-    # 進捗表示
-    progress = st.session_state.question_count / st.session_state.total_questions
-    st.progress(progress)
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("問題", f"{st.session_state.question_count + 1}/{st.session_state.total_questions}")
-    with col2:
-        st.metric("正解数", st.session_state.score)
-    with col3:
-        if st.session_state.start_time:
-            elapsed = time.time() - st.session_state.start_time
-            st.metric("経過時間", f"{elapsed:.1f}秒")
-    
-    st.divider()
-    
-    # 問題表示
-    st.header("💡 問題")
-    st.subheader(f"**{st.session_state.current_question} = ?**")
-    
-    # 答え入力
-    user_answer = st.number_input(
-        "答えを入力してください:",
-        value=0,
-        step=1,
-        key=f"answer_{st.session_state.question_count}"
-    )
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("✅ 答える", type="primary"):
-            st.session_state.question_count += 1
-            if user_answer == st.session_state.current_answer:
-                st.session_state.score += 1
-                st.success(f"正解！ 答えは {st.session_state.current_answer} です")
-            else:
-                st.error(f"不正解... 正解は {st.session_state.current_answer} です")
-            
-            time.sleep(1)
-            next_question()
-            st.rerun()
-    
-    with col2:
-        if st.button("⏭️ スキップ"):
-            st.session_state.question_count += 1
-            st.warning(f"スキップしました。答えは {st.session_state.current_answer} です")
-            time.sleep(1)
-            next_question()
-            st.rerun()
+  function resumeGame() {
+    setGameState('playing');
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }
 
-elif st.session_state.game_state == 'finished':
-    st.header("🎉 ゲーム終了!")
-    
-    # 結果表示
-    accuracy = (st.session_state.score / st.session_state.total_questions) * 100
-    total_time = time.time() - st.session_state.start_time
-    avg_time = total_time / st.session_state.total_questions
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("正解数", f"{st.session_state.score}/{st.session_state.total_questions}")
-    with col2:
-        st.metric("正答率", f"{accuracy:.1f}%")
-    with col3:
-        st.metric("総時間", f"{total_time:.1f}秒")
-    with col4:
-        st.metric("平均時間", f"{avg_time:.1f}秒/問")
-    
-    # 評価
-    if accuracy >= 90:
-        st.success("🏆 素晴らしい！完璧に近い成績です！")
-    elif accuracy >= 70:
-        st.info("👍 良い成績です！もう少しで完璧です！")
-    elif accuracy >= 50:
-        st.warning("📚 もう少し練習が必要ですね。")
-    else:
-        st.error("💪 諦めずに練習を続けましょう！")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔄 もう一度プレイ", type="primary"):
-            start_game()
-            st.rerun()
-    
-    with col2:
-        if st.button("📋 メニューに戻る"):
-            reset_game()
-            st.rerun()
+  function resetGame() {
+    setGameState('menu');
+    setScore(0);
+    setTotalProblems(0);
+    setStreak(0);
+    setFeedback('');
+    setIsCorrect(null);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+  }
 
-# 履歴表示
-if st.session_state.history:
-    st.divider()
-    st.header("📊 練習履歴")
+  function submitAnswer() {
+    if (!userAnswer.trim()) return;
+
+    const answer = parseInt(userAnswer);
+    const correct = answer === problem.answer;
     
-    df = pd.DataFrame(st.session_state.history)
-    st.dataframe(df, use_container_width=True)
+    setTotalProblems(prev => prev + 1);
+    setIsCorrect(correct);
     
-    # 統計情報
-    if len(st.session_state.history) > 1:
-        col1, col2 = st.columns(2)
-        with col1:
-            avg_accuracy = df['accuracy'].str.rstrip('%').astype(float).mean()
-            st.metric("平均正答率", f"{avg_accuracy:.1f}%")
-        
-        with col2:
-            total_games = len(st.session_state.history)
-            st.metric("総プレイ回数", f"{total_games}回")
+    if (correct) {
+      setScore(prev => prev + 1);
+      setStreak(prev => {
+        const newStreak = prev + 1;
+        setBestStreak(current => Math.max(current, newStreak));
+        return newStreak;
+      });
+      setFeedback('正解！');
+      
+      setTimeout(() => {
+        generateProblem();
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 500);
+    } else {
+      setStreak(0);
+      setFeedback(`不正解。正解は ${problem.answer} です。`);
+      
+      setTimeout(() => {
+        generateProblem();
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 1500);
+    }
+  }
+
+  function handleKeyPress(e) {
+    if (e.key === 'Enter') {
+      submitAnswer();
+    }
+  }
+
+  useEffect(() => {
+    if (gameState === 'playing' && timeLeft > 0) {
+      timerRef.current = setTimeout(() => {
+        setTimeLeft(prev => prev - 1);
+      }, 1000);
+    } else if (gameState === 'playing' && timeLeft === 0) {
+      setStreak(0);
+      setTotalProblems(prev => prev + 1);
+      setIsCorrect(false);
+      setFeedback(`時間切れ！正解は ${problem.answer} です。`);
+      
+      setTimeout(() => {
+        generateProblem();
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 1500);
+    }
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, [gameState, timeLeft, problem]);
+
+  const currentConfig = operations[currentOperation].levels[currentLevel];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <Calculator className="w-8 h-8 text-indigo-600" />
+            <h1 className="text-4xl font-bold text-indigo-800">高速暗算アプリ</h1>
+          </div>
+          <p className="text-gray-600">制限時間内に正確に計算しよう！</p>
+        </div>
+
+        {gameState === 'menu' && (
+          <div className="bg-white rounded-xl shadow-lg p-8">
+            {/* Operation Selection */}
+            <div className="mb-8">
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">演算を選択</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {Object.entries(operations).map(([key, op]) => (
+                  <button
+                    key={key}
+                    onClick={() => setCurrentOperation(key)}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      currentOperation === key
+                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="text-2xl font-bold mb-2">{op.symbol}</div>
+                    <div className="text-sm">{op.name}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Level Selection */}
+            <div className="mb-8">
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">難易度を選択</h2>
+              <div className="space-y-3">
+                {Object.entries(operations[currentOperation].levels).map(([key, level]) => (
+                  <button
+                    key={key}
+                    onClick={() => setCurrentLevel(key)}
+                    className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+                      currentLevel === key
+                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="font-semibold">{level.name}</div>
+                    <div className="text-sm text-gray-600">制限時間: {level.timeLimit}秒</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Start Button */}
+            <button
+              onClick={startGame}
+              className="w-full bg-indigo-600 text-white py-4 rounded-lg font-semibold text-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
+            >
+              <Play className="w-5 h-5" />
+              ゲーム開始
+            </button>
+          </div>
+        )}
+
+        {gameState === 'playing' && (
+          <div className="bg-white rounded-xl shadow-lg p-8">
+            {/* Game Header */}
+            <div className="flex justify-between items-center mb-8">
+              <div className="flex items-center gap-4">
+                <h2 className="text-xl font-bold text-gray-800">
+                  {operations[currentOperation].name} - {currentConfig.name}
+                </h2>
+                <div className="flex items-center gap-2">
+                  <Trophy className="w-5 h-5 text-yellow-500" />
+                  <span className="font-semibold">{score}/{totalProblems}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-red-500" />
+                  <span className={`text-2xl font-bold ${timeLeft <= 3 ? 'text-red-500' : 'text-gray-800'}`}>
+                    {timeLeft}
+                  </span>
+                </div>
+                <button
+                  onClick={pauseGame}
+                  className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors flex items-center gap-2"
+                >
+                  <Pause className="w-4 h-4" />
+                  一時停止
+                </button>
+              </div>
+            </div>
+
+            {/* Problem Display */}
+            {problem && (
+              <div className="text-center mb-8">
+                <div className="text-6xl font-bold text-gray-800 mb-4">
+                  {problem.num1} {operations[currentOperation].symbol} {problem.num2} = ?
+                </div>
+                <div className="max-w-xs mx-auto">
+                  <input
+                    ref={inputRef}
+                    type="number"
+                    value={userAnswer}
+                    onChange={(e) => setUserAnswer(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    className="w-full text-4xl text-center border-2 border-gray-300 rounded-lg py-4 focus:border-indigo-500 focus:outline-none"
+                    placeholder="答え"
+                  />
+                </div>
+                <button
+                  onClick={submitAnswer}
+                  disabled={!userAnswer.trim()}
+                  className="mt-4 bg-indigo-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  回答する
+                </button>
+              </div>
+            )}
+
+            {/* Feedback */}
+            {feedback && (
+              <div className={`text-center text-xl font-semibold mb-4 ${
+                isCorrect === true ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {feedback}
+              </div>
+            )}
+
+            {/* Stats */}
+            <div className="flex justify-center gap-8 text-center">
+              <div>
+                <div className="text-2xl font-bold text-indigo-600">{streak}</div>
+                <div className="text-sm text-gray-600">連続正解</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-purple-600">{bestStreak}</div>
+                <div className="text-sm text-gray-600">最高連続</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-green-600">
+                  {totalProblems > 0 ? Math.round((score / totalProblems) * 100) : 0}%
+                </div>
+                <div className="text-sm text-gray-600">正解率</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {gameState === 'paused' && (
+          <div className="bg-white rounded-xl shadow-lg p-8 text-center">
+            <h2 className="text-3xl font-bold text-gray-800 mb-4">一時停止中</h2>
+            <p className="text-gray-600 mb-8">準備ができたら再開してください</p>
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={resumeGame}
+                className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors flex items-center gap-2"
+              >
+                <Play className="w-5 h-5" />
+                再開
+              </button>
+              <button
+                onClick={resetGame}
+                className="bg-gray-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-gray-600 transition-colors flex items-center gap-2"
+              >
+                <RotateCcw className="w-5 h-5" />
+                メニューに戻る
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default MentalMathApp;
