@@ -288,7 +288,7 @@ with col2:
                         st.session_state.feedback = ""
                         st.rerun()
                 
-                else:
+            else:
                 # 時間切れの場合
                 st.session_state.total_problems += 1
                 st.session_state.streak = 0
@@ -327,17 +327,3 @@ with col2:
                 time.sleep(1)
                 st.rerun()
 
-# フッター
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #666;">
-    <p>🎯 制限時間内に正確に計算しよう！</p>
-    <p>各問題には制限時間が設定されています。時間内に正解を目指しましょう。</p>
-</div>
-""", unsafe_allow_html=True)
-if submitted and user_answer is not None:
-    try:
-        user_answer = int(user_answer)
-        ...
-    except ValueError:
-        st.warning("数値を入力してください。")
