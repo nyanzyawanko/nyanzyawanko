@@ -335,3 +335,9 @@ st.markdown("""
     <p>各問題には制限時間が設定されています。時間内に正解を目指しましょう。</p>
 </div>
 """, unsafe_allow_html=True)
+if submitted and user_answer is not None:
+    try:
+        user_answer = int(user_answer)
+        ...
+    except ValueError:
+        st.warning("数値を入力してください。")
