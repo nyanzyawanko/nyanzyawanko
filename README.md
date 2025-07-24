@@ -44,8 +44,42 @@ if 'game_mode' not in st.session_state:
     st.session_state.game_mode = 'normal'  # 'normal' or 'time_attack'
 if 'time_attack_duration' not in st.session_state:
     st.session_state.time_attack_duration = 60  # 60秒
+if 'question_time_limit' not in st.session_state:
+    st.session_state.question_time_limit = None  # 問題ごとの制限時間
+if 'time_limit_exceeded' not in st.session_state:
+    st.session_state.time_limit_exceeded = False
 
-def is_time_up():
+def get_question_time_limit(difficulty, operation):
+    """割り算モードの場合、難易度に応じた制限時間を返す"""
+    if operation == '/' or (operation == 'mixed' and '/' in ['+', '-', '*', '/']):
+        if difficulty == 'easy':
+            return 10  # 初級: 10秒
+        elif difficulty == 'medium':
+            return 20  # 中級: 20秒
+        elif difficulty == 'hard':
+            return 30  # 上級: 30秒
+        else:  # expert
+            return 40  # 超上級: 40秒
+    return None  # 割り算以外は制限時間なし
+
+def is_question_time_up():
+    """問題ごとの制限時間をチェック"""
+    if (st.session_state.question_time_limit and 
+        st.session_state.question_start_time and 
+        (st.session_state.operation == '/' or st.session_state.operation == 'mixed')):
+        elapsed = time.time() - st.session_state.question_start_time
+        return elapsed >= st.session_state.question_time_limit
+    return False
+
+def get_question_remaining_time():
+    """問題ごとの残り時間を取得"""
+    if (st.session_state.question_time_limit and 
+        st.session_state.question_start_time and
+        (st.session_state.operation == '/' or st.session_state.operation == 'mixed')):
+        elapsed = time.time() - st.session_state.question_start_time
+        remaining = max(0, st.session_state.question_time_limit - elapsed)
+        return remaining
+    return None
     """タイムアタックモードで時間切れかチェック"""
     if st.session_state.game_mode == 'time_attack' and st.session_state.start_time:
         elapsed = time.time() - st.session_state.start_time
@@ -147,6 +181,13 @@ def start_game():
     st.session_state.history = []
     st.session_state.current_streak = 0
     st.session_state.max_streak = 0
+    st.session_state.time_limit_exceeded = False
+    
+    # 割り算モードの制限時間を設定
+    st.session_state.question_time_limit = get_question_time_limit(
+        st.session_state.difficulty, st.session_state.operation
+    )
+    
     # 最初の問題を生成
     question, answer = generate_question(st.session_state.difficulty, st.session_state.operation)
     st.session_state.current_question = question
@@ -170,11 +211,18 @@ def next_question():
     st.session_state.current_question = question
     st.session_state.current_answer = answer
     st.session_state.question_start_time = time.time()
+    st.session_state.time_limit_exceeded = False
 
 def check_answer(user_answer):
     """回答をチェックする"""
     question_time = time.time() - st.session_state.question_start_time
     is_correct = user_answer == st.session_state.current_answer
+    time_limit_exceeded = is_question_time_up()
+    
+    # 制限時間オーバーの場合は不正解扱い
+    if time_limit_exceeded:
+        is_correct = False
+        st.session_state.time_limit_exceeded = True
     
     if is_correct:
         st.session_state.score += 1
@@ -195,11 +243,12 @@ def check_answer(user_answer):
         'user_answer': user_answer,
         'is_correct': is_correct,
         'time': round(question_time, 2),
-        'streak_at_time': st.session_state.current_streak if is_correct else 0
+        'streak_at_time': st.session_state.current_streak if is_correct else 0,
+        'time_limit_exceeded': time_limit_exceeded
     })
     
     st.session_state.question_count += 1
-    return is_correct, question_time
+    return is_correct, question_time, time_limit_exceeded
 
 # メインのUI
 st.title("🧮 高速暗算練習アプリ")
@@ -252,12 +301,13 @@ if st.session_state.game_state == 'menu':
     
     st.markdown("### 💡 割り算レベル説明")
     st.info("""
-    **簡単**: 1桁割る1桁 (例: 8÷2, 18÷3)  
-    **普通**: 2桁割る1桁 (例: 48÷6, 72÷8)  
-    **難しい**: 2桁割る2桁 (例: 84÷12, 96÷16)  
-    **超難しい**: より大きな数の割り算 (例: 225÷15, 360÷18)
+    **簡単**: 1桁割る1桁 (例: 8÷2, 18÷3) - ⏰ **制限時間: 10秒**  
+    **普通**: 2桁割る1桁 (例: 48÷6, 72÷8) - ⏰ **制限時間: 20秒**  
+    **難しい**: 2桁割る2桁 (例: 84÷12, 96÷16) - ⏰ **制限時間: 30秒**  
+    **超難しい**: より大きな数の割り算 (例: 225÷15, 360÷18) - ⏰ **制限時間: 40秒**
     
-    ※全て割り切れる問題のみ出題されます
+    ※全て割り切れる問題のみ出題されます  
+    ※割り算モードでは問題ごとに制限時間があります
     """)
     
     if st.button("🚀 ゲーム開始", type="primary", use_container_width=True):
@@ -270,6 +320,16 @@ elif st.session_state.game_state == 'playing':
         st.session_state.game_state = 'result'
         st.rerun()
     
+    # 問題ごとの制限時間チェック（割り算モード）
+    if is_question_time_up() and not st.session_state.time_limit_exceeded:
+        st.session_state.time_limit_exceeded = True
+        # 制限時間オーバーとして処理
+        is_correct, question_time, time_limit_exceeded = check_answer(-999999)  # ダミーの間違った答え
+        st.error("⏰ 制限時間オーバー！")
+        time.sleep(1)
+        next_question()
+        st.rerun()
+    
     # プログレスバーまたは時間表示
     if st.session_state.game_mode == 'normal':
         progress = st.session_state.question_count / st.session_state.total_questions
@@ -280,6 +340,16 @@ elif st.session_state.game_state == 'playing':
         if remaining_time is not None:
             progress = 1 - (remaining_time / st.session_state.time_attack_duration)
             st.progress(progress)
+    
+    # 問題ごとの制限時間表示（割り算モード）
+    question_remaining = get_question_remaining_time()
+    if question_remaining is not None:
+        if question_remaining <= 3:
+            st.error(f"⏰ 残り時間: {question_remaining:.1f}秒 🚨")
+        elif question_remaining <= 5:
+            st.warning(f"⏰ 残り時間: {question_remaining:.1f}秒")
+        else:
+            st.info(f"⏰ 制限時間: {question_remaining:.1f}秒")
     
     # メトリクス表示
     if st.session_state.game_mode == 'normal':
@@ -333,9 +403,11 @@ elif st.session_state.game_state == 'playing':
         submitted = st.form_submit_button("回答", type="primary", use_container_width=True)
         
         if submitted:
-            is_correct, question_time = check_answer(int(user_answer))
+            is_correct, question_time, time_limit_exceeded = check_answer(int(user_answer))
             
-            if is_correct:
+            if time_limit_exceeded:
+                st.error(f"⏰ 制限時間オーバー！正解は {st.session_state.current_answer} でした。")
+            elif is_correct:
                 streak_msg = ""
                 if st.session_state.current_streak >= 10:
                     streak_msg = f" 🎉 素晴らしい！{st.session_state.current_streak}連続正解！"
@@ -458,17 +530,23 @@ elif st.session_state.game_state == 'result':
     
     if st.session_state.history:
         df = pd.DataFrame(st.session_state.history)
-        df['結果'] = df['is_correct'].map({True: '✅', False: '❌'})
+        df['結果'] = df.apply(lambda row: '⏰' if row.get('time_limit_exceeded', False) else ('✅' if row['is_correct'] else '❌'), axis=1)
         df['連続記録'] = df['streak_at_time']
-        df = df[['question', 'user_answer', 'correct_answer', '結果', 'time', '連続記録']]
-        df.columns = ['問題', 'あなたの答え', '正解', '結果', '時間(秒)', '連続記録']
         
-        st.dataframe(df, use_container_width=True)
+        # 表示する列を選択
+        display_cols = ['question', 'user_answer', 'correct_answer', '結果', 'time', '連続記録']
+        col_names = ['問題', 'あなたの答え', '正解', '結果', '時間(秒)', '連続記録']
+        
+        df_display = df[display_cols].copy()
+        df_display.columns = col_names
+        
+        st.dataframe(df_display, use_container_width=True)
         
         # 統計情報
         st.subheader("📈 統計情報")
         correct_times = [h['time'] for h in st.session_state.history if h['is_correct']]
         incorrect_times = [h['time'] for h in st.session_state.history if not h['is_correct']]
+        timeout_count = len([h for h in st.session_state.history if h.get('time_limit_exceeded', False)])
         
         if st.session_state.game_mode == 'time_attack':
             col1, col2, col3, col4 = st.columns(4)
@@ -484,12 +562,18 @@ elif st.session_state.game_state == 'result':
                 if avg_time > 0:
                     st.metric("問題処理速度", f"{60/avg_time:.1f}問/分")
         else:
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 if correct_times:
                     st.metric("正解時の平均時間", f"{sum(correct_times)/len(correct_times):.2f}秒")
             with col2:
                 if incorrect_times:
+                    st.metric("不正解時の平均時間", f"{sum(incorrect_times)/len(incorrect_times):.2f}秒")
+            with col3:
+                st.metric("全時間最高記録", f"🏅{st.session_state.all_time_best_streak}連続")
+            with col4:
+                if timeout_count > 0:
+                    st.metric("制限時間オーバー", f"⏰{timeout_count}回")
                     st.metric("不正解時の平均時間", f"{sum(incorrect_times)/len(incorrect_times):.2f}秒")
             with col3:
                 st.metric("全時間最高記録", f"🏅{st.session_state.all_time_best_streak}連続")
