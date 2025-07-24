@@ -34,8 +34,31 @@ if 'history' not in st.session_state:
     st.session_state.history = []
 if 'question_start_time' not in st.session_state:
     st.session_state.question_start_time = None
+if 'current_streak' not in st.session_state:
+    st.session_state.current_streak = 0
+if 'max_streak' not in st.session_state:
+    st.session_state.max_streak = 0
+if 'all_time_best_streak' not in st.session_state:
+    st.session_state.all_time_best_streak = 0
+if 'game_mode' not in st.session_state:
+    st.session_state.game_mode = 'normal'  # 'normal' or 'time_attack'
+if 'time_attack_duration' not in st.session_state:
+    st.session_state.time_attack_duration = 60  # 60秒
 
-def generate_question(difficulty, operation):
+def is_time_up():
+    """タイムアタックモードで時間切れかチェック"""
+    if st.session_state.game_mode == 'time_attack' and st.session_state.start_time:
+        elapsed = time.time() - st.session_state.start_time
+        return elapsed >= st.session_state.time_attack_duration
+    return False
+
+def get_remaining_time():
+    """タイムアタックモードでの残り時間を取得"""
+    if st.session_state.game_mode == 'time_attack' and st.session_state.start_time:
+        elapsed = time.time() - st.session_state.start_time
+        remaining = max(0, st.session_state.time_attack_duration - elapsed)
+        return remaining
+    return None
     """問題を生成する関数"""
     if difficulty == 'easy':
         range_min, range_max = 1, 20
@@ -122,6 +145,8 @@ def start_game():
     st.session_state.question_count = 0
     st.session_state.start_time = time.time()
     st.session_state.history = []
+    st.session_state.current_streak = 0
+    st.session_state.max_streak = 0
     # 最初の問題を生成
     question, answer = generate_question(st.session_state.difficulty, st.session_state.operation)
     st.session_state.current_question = question
@@ -130,13 +155,21 @@ def start_game():
 
 def next_question():
     """次の問題に進む"""
-    if st.session_state.question_count < st.session_state.total_questions:
-        question, answer = generate_question(st.session_state.difficulty, st.session_state.operation)
-        st.session_state.current_question = question
-        st.session_state.current_answer = answer
-        st.session_state.question_start_time = time.time()
-    else:
+    # タイムアタックモードで時間切れチェック
+    if is_time_up():
         st.session_state.game_state = 'result'
+        return
+    
+    # 通常モードでは問題数をチェック
+    if st.session_state.game_mode == 'normal' and st.session_state.question_count >= st.session_state.total_questions:
+        st.session_state.game_state = 'result'
+        return
+    
+    # 次の問題を生成
+    question, answer = generate_question(st.session_state.difficulty, st.session_state.operation)
+    st.session_state.current_question = question
+    st.session_state.current_answer = answer
+    st.session_state.question_start_time = time.time()
 
 def check_answer(user_answer):
     """回答をチェックする"""
@@ -145,6 +178,15 @@ def check_answer(user_answer):
     
     if is_correct:
         st.session_state.score += 1
+        st.session_state.current_streak += 1
+        # 現在のゲームでの最高記録を更新
+        if st.session_state.current_streak > st.session_state.max_streak:
+            st.session_state.max_streak = st.session_state.current_streak
+        # 全時間での最高記録を更新
+        if st.session_state.current_streak > st.session_state.all_time_best_streak:
+            st.session_state.all_time_best_streak = st.session_state.current_streak
+    else:
+        st.session_state.current_streak = 0
         
     # 履歴に記録
     st.session_state.history.append({
@@ -152,7 +194,8 @@ def check_answer(user_answer):
         'correct_answer': st.session_state.current_answer,
         'user_answer': user_answer,
         'is_correct': is_correct,
-        'time': round(question_time, 2)
+        'time': round(question_time, 2),
+        'streak_at_time': st.session_state.current_streak if is_correct else 0
     })
     
     st.session_state.question_count += 1
@@ -167,6 +210,29 @@ if st.session_state.game_state == 'menu':
     col1, col2 = st.columns(2)
     
     with col1:
+        st.subheader("🎮 ゲームモード")
+        game_mode = st.radio(
+            "モードを選択",
+            ['normal', 'time_attack'],
+            index=['normal', 'time_attack'].index(st.session_state.game_mode),
+            format_func=lambda x: {'normal': '📚 通常モード（問題数指定）', 'time_attack': '⏱️ タイムアタック（1分間）'}[x]
+        )
+        st.session_state.game_mode = game_mode
+        
+        if game_mode == 'normal':
+            total_questions = st.number_input(
+                "問題数",
+                min_value=5,
+                max_value=50,
+                value=st.session_state.total_questions,
+                step=5
+            )
+            st.session_state.total_questions = total_questions
+        else:
+            st.info("⏱️ **1分間で何問解けるかチャレンジ！**")
+    
+    with col2:
+        st.subheader("⚙️ 設定")
         difficulty = st.selectbox(
             "難易度を選択",
             ['easy', 'medium', 'hard', 'expert'],
@@ -184,16 +250,6 @@ if st.session_state.game_state == 'menu':
         )
         st.session_state.operation = operation
     
-    with col2:
-        total_questions = st.number_input(
-            "問題数",
-            min_value=5,
-            max_value=50,
-            value=st.session_state.total_questions,
-            step=5
-        )
-        st.session_state.total_questions = total_questions
-    
     st.markdown("### 💡 割り算レベル説明")
     st.info("""
     **簡単**: 1桁割る1桁 (例: 8÷2, 18÷3)  
@@ -209,21 +265,62 @@ if st.session_state.game_state == 'menu':
         st.rerun()
 
 elif st.session_state.game_state == 'playing':
-    # プログレスバー
-    progress = st.session_state.question_count / st.session_state.total_questions
-    st.progress(progress)
+    # 時間切れチェック（タイムアタックモード）
+    if is_time_up():
+        st.session_state.game_state = 'result'
+        st.rerun()
     
-    col1, col2, col3 = st.columns([1, 2, 1])
+    # プログレスバーまたは時間表示
+    if st.session_state.game_mode == 'normal':
+        progress = st.session_state.question_count / st.session_state.total_questions
+        st.progress(progress)
+    else:
+        # タイムアタックモードでは残り時間を表示
+        remaining_time = get_remaining_time()
+        if remaining_time is not None:
+            progress = 1 - (remaining_time / st.session_state.time_attack_duration)
+            st.progress(progress)
     
-    with col1:
-        st.metric("問題", f"{st.session_state.question_count + 1}/{st.session_state.total_questions}")
-    
-    with col2:
-        st.metric("正解数", st.session_state.score)
-    
-    with col3:
-        elapsed_time = time.time() - st.session_state.start_time
-        st.metric("経過時間", f"{elapsed_time:.1f}秒")
+    # メトリクス表示
+    if st.session_state.game_mode == 'normal':
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+        
+        with col1:
+            st.metric("問題", f"{st.session_state.question_count + 1}/{st.session_state.total_questions}")
+        
+        with col2:
+            st.metric("正解数", st.session_state.score)
+        
+        with col3:
+            # 連続正解記録を強調表示
+            streak_color = "🔥" if st.session_state.current_streak >= 5 else "⭐" if st.session_state.current_streak >= 3 else ""
+            st.metric("連続正解", f"{streak_color}{st.session_state.current_streak}")
+        
+        with col4:
+            elapsed_time = time.time() - st.session_state.start_time
+            st.metric("経過時間", f"{elapsed_time:.1f}秒")
+    else:
+        # タイムアタックモード
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+        
+        with col1:
+            remaining_time = get_remaining_time()
+            if remaining_time is not None:
+                if remaining_time <= 10:
+                    st.metric("⏰ 残り時間", f"🚨{remaining_time:.1f}秒")
+                else:
+                    st.metric("⏰ 残り時間", f"{remaining_time:.1f}秒")
+        
+        with col2:
+            st.metric("解答数", f"{st.session_state.question_count}問")
+        
+        with col3:
+            st.metric("正解数", f"✅{st.session_state.score}")
+        
+        with col4:
+            # 連続正解記録を強調表示
+            streak_color = "🔥" if st.session_state.current_streak >= 5 else "⭐" if st.session_state.current_streak >= 3 else ""
+            st.metric("連続正解", f"{streak_color}{st.session_state.current_streak}")
     
     st.markdown("---")
     
@@ -239,44 +336,120 @@ elif st.session_state.game_state == 'playing':
             is_correct, question_time = check_answer(int(user_answer))
             
             if is_correct:
-                st.success(f"✅ 正解！ ({question_time:.2f}秒)")
+                streak_msg = ""
+                if st.session_state.current_streak >= 10:
+                    streak_msg = f" 🎉 素晴らしい！{st.session_state.current_streak}連続正解！"
+                elif st.session_state.current_streak >= 5:
+                    streak_msg = f" 🔥 {st.session_state.current_streak}連続正解中！"
+                elif st.session_state.current_streak >= 3:
+                    streak_msg = f" ⭐ {st.session_state.current_streak}連続正解！"
+                
+                st.success(f"✅ 正解！ ({question_time:.2f}秒){streak_msg}")
             else:
-                st.error(f"❌ 不正解。正解は {st.session_state.current_answer} でした。 ({question_time:.2f}秒)")
+                broken_streak_msg = ""
+                if st.session_state.current_streak == 0 and len(st.session_state.history) > 1:
+                    # 前の問題で連続記録が途切れた場合
+                    prev_streak = st.session_state.history[-2].get('streak_at_time', 0) if len(st.session_state.history) >= 2 else 0
+                    if prev_streak >= 3:
+                        broken_streak_msg = f" ({prev_streak}連続記録が途切れました)"
+                
+                st.error(f"❌ 不正解。正解は {st.session_state.current_answer} でした。 ({question_time:.2f}秒){broken_streak_msg}")
             
             time.sleep(1)  # 結果を表示する時間
             next_question()
             st.rerun()
 
 elif st.session_state.game_state == 'result':
-    st.header("🎉 結果発表")
+    # 結果のタイトルをモードに応じて変更
+    if st.session_state.game_mode == 'time_attack':
+        st.header("⏱️ タイムアタック結果")
+    else:
+        st.header("🎉 結果発表")
     
     total_time = time.time() - st.session_state.start_time
-    accuracy = (st.session_state.score / st.session_state.total_questions) * 100
-    avg_time = sum([h['time'] for h in st.session_state.history]) / len(st.session_state.history)
     
-    col1, col2, col3, col4 = st.columns(4)
+    # タイムアタックモードでは最終的な時間を60秒に固定
+    if st.session_state.game_mode == 'time_attack':
+        total_time = st.session_state.time_attack_duration
     
-    with col1:
-        st.metric("正解数", f"{st.session_state.score}/{st.session_state.total_questions}")
-    
-    with col2:
-        st.metric("正答率", f"{accuracy:.1f}%")
-    
-    with col3:
-        st.metric("総時間", f"{total_time:.1f}秒")
-    
-    with col4:
-        st.metric("平均時間", f"{avg_time:.2f}秒/問")
-    
-    # パフォーマンス評価
-    if accuracy >= 90 and avg_time <= 3:
-        st.success("🏆 素晴らしい！暗算マスターです！")
-    elif accuracy >= 80 and avg_time <= 5:
-        st.info("👍 とても良い成績です！")
-    elif accuracy >= 70:
-        st.warning("📚 もう少し練習すれば上達しますよ！")
+    if st.session_state.question_count > 0:
+        accuracy = (st.session_state.score / st.session_state.question_count) * 100
+        avg_time = sum([h['time'] for h in st.session_state.history]) / len(st.session_state.history)
     else:
-        st.error("💪 練習あるのみ！頑張りましょう！")
+        accuracy = 0
+        avg_time = 0
+    
+    # メトリクス表示をモードに応じて変更
+    if st.session_state.game_mode == 'time_attack':
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            st.metric("解答数", f"{st.session_state.question_count}問")
+        
+        with col2:
+            st.metric("正解数", f"{st.session_state.score}問")
+        
+        with col3:
+            st.metric("正答率", f"{accuracy:.1f}%")
+        
+        with col4:
+            st.metric("最高連続正解", f"🏆{st.session_state.max_streak}")
+        
+        with col5:
+            if avg_time > 0:
+                questions_per_minute = 60 / avg_time
+                st.metric("問/分", f"{questions_per_minute:.1f}")
+    else:
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            st.metric("正解数", f"{st.session_state.score}/{st.session_state.total_questions}")
+        
+        with col2:
+            st.metric("正答率", f"{accuracy:.1f}%")
+        
+        with col3:
+            st.metric("最高連続正解", f"🏆{st.session_state.max_streak}")
+        
+        with col4:
+            st.metric("総時間", f"{total_time:.1f}秒")
+        
+        with col5:
+            st.metric("平均時間", f"{avg_time:.2f}秒/問")
+    
+    # パフォーマンス評価をモードに応じて変更
+    streak_bonus = ""
+    if st.session_state.max_streak >= 10:
+        streak_bonus = f" 連続正解記録{st.session_state.max_streak}回は素晴らしい！"
+    elif st.session_state.max_streak >= 5:
+        streak_bonus = f" {st.session_state.max_streak}連続正解、集中力抜群！"
+    
+    if st.session_state.game_mode == 'time_attack':
+        # タイムアタック用の評価
+        if st.session_state.question_count >= 30 and accuracy >= 90:
+            st.success(f"🏆 スーパーマスター！1分間で{st.session_state.question_count}問も解くなんて凄すぎます！{streak_bonus}")
+        elif st.session_state.question_count >= 20 and accuracy >= 80:
+            st.info(f"🔥 暗算の達人！1分間で{st.session_state.question_count}問、素晴らしいスピードです！{streak_bonus}")
+        elif st.session_state.question_count >= 15:
+            st.success(f"👍 とても良いペース！1分間で{st.session_state.question_count}問解けました！{streak_bonus}")
+        elif st.session_state.question_count >= 10:
+            st.warning(f"📚 もう少し練習すればスピードアップできますよ！{streak_bonus}")
+        else:
+            st.error(f"💪 タイムアタックは難しいですが、練習すれば必ず上達します！{streak_bonus}")
+    else:
+        # 通常モード用の評価
+        if accuracy >= 90 and avg_time <= 3:
+            st.success(f"🏆 素晴らしい！暗算マスターです！{streak_bonus}")
+        elif accuracy >= 80 and avg_time <= 5:
+            st.info(f"👍 とても良い成績です！{streak_bonus}")
+        elif accuracy >= 70:
+            st.warning(f"📚 もう少し練習すれば上達しますよ！{streak_bonus}")
+        else:
+            st.error(f"💪 練習あるのみ！頑張りましょう！{streak_bonus}")
+    
+    # 全時間記録の表示
+    if st.session_state.all_time_best_streak > st.session_state.max_streak:
+        st.info(f"🎯 あなたの全時間最高連続正解記録: {st.session_state.all_time_best_streak}回")
     
     st.markdown("---")
     
@@ -286,8 +459,9 @@ elif st.session_state.game_state == 'result':
     if st.session_state.history:
         df = pd.DataFrame(st.session_state.history)
         df['結果'] = df['is_correct'].map({True: '✅', False: '❌'})
-        df = df[['question', 'user_answer', 'correct_answer', '結果', 'time']]
-        df.columns = ['問題', 'あなたの答え', '正解', '結果', '時間(秒)']
+        df['連続記録'] = df['streak_at_time']
+        df = df[['question', 'user_answer', 'correct_answer', '結果', 'time', '連続記録']]
+        df.columns = ['問題', 'あなたの答え', '正解', '結果', '時間(秒)', '連続記録']
         
         st.dataframe(df, use_container_width=True)
         
@@ -296,13 +470,29 @@ elif st.session_state.game_state == 'result':
         correct_times = [h['time'] for h in st.session_state.history if h['is_correct']]
         incorrect_times = [h['time'] for h in st.session_state.history if not h['is_correct']]
         
-        col1, col2 = st.columns(2)
-        with col1:
-            if correct_times:
-                st.metric("正解時の平均時間", f"{sum(correct_times)/len(correct_times):.2f}秒")
-        with col2:
-            if incorrect_times:
-                st.metric("不正解時の平均時間", f"{sum(incorrect_times)/len(incorrect_times):.2f}秒")
+        if st.session_state.game_mode == 'time_attack':
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                if correct_times:
+                    st.metric("正解時の平均時間", f"{sum(correct_times)/len(correct_times):.2f}秒")
+            with col2:
+                if incorrect_times:
+                    st.metric("不正解時の平均時間", f"{sum(incorrect_times)/len(incorrect_times):.2f}秒")
+            with col3:
+                st.metric("全時間最高記録", f"🏅{st.session_state.all_time_best_streak}連続")
+            with col4:
+                if avg_time > 0:
+                    st.metric("問題処理速度", f"{60/avg_time:.1f}問/分")
+        else:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if correct_times:
+                    st.metric("正解時の平均時間", f"{sum(correct_times)/len(correct_times):.2f}秒")
+            with col2:
+                if incorrect_times:
+                    st.metric("不正解時の平均時間", f"{sum(incorrect_times)/len(incorrect_times):.2f}秒")
+            with col3:
+                st.metric("全時間最高記録", f"🏅{st.session_state.all_time_best_streak}連続")
     
     st.markdown("---")
     
