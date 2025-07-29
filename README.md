@@ -26,8 +26,6 @@ if 'current_question' not in st.session_state:
     st.session_state.current_question = None
 if 'current_answer' not in st.session_state:
     st.session_state.current_answer = None
-if 'difficulty' not in st.session_state:
-    st.session_state.difficulty = 'medium'
 if 'operation' not in st.session_state:
     st.session_state.operation = 'mixed'
 if 'history' not in st.session_state:
@@ -91,13 +89,6 @@ def generate_number_by_digits(min_digits, max_digits):
         min_val = 10 ** (digits - 1)
         max_val = (10 ** digits) - 1
         return random.randint(min_val, max_val)
-
-def get_question_time_limit_custom(operation):
-    """カスタム設定から制限時間を取得"""
-    op_map = {'+': 'addition', '-': 'subtraction', '*': 'multiplication', '/': 'division'}
-    if operation in op_map:
-        return st.session_state.custom_settings[op_map[operation]]['time_limit']
-    return None
 
 def is_question_time_up():
     """問題ごとの制限時間をチェック"""
@@ -506,34 +497,4 @@ if st.session_state.game_state == 'menu':
                     'addition': {'min_digits_a': 2, 'max_digits_a': 3, 'min_digits_b': 2, 'max_digits_b': 3, 'time_limit': 15},
                     'subtraction': {'min_digits_a': 2, 'max_digits_a': 3, 'min_digits_b': 2, 'max_digits_b': 3, 'time_limit': 15},
                     'multiplication': {'min_digits_a': 2, 'max_digits_a': 2, 'min_digits_b': 1, 'max_digits_b': 2, 'time_limit': 20},
-                    'division': {'min_digits_dividend': 2, 'max_digits_dividend': 3, 'min_digits_divisor': 1, 'max_digits_divisor': 2, 'time_limit': 30}
-                }
-                st.success("上級レベルに設定しました！")
-                st.rerun()
-        
-        with col4:
-            if st.button("🔴 超上級レベル", use_container_width=True):
-                st.session_state.custom_settings = {
-                    'addition': {'min_digits_a': 3, 'max_digits_a': 4, 'min_digits_b': 3, 'max_digits_b': 4, 'time_limit': 10},
-                    'subtraction': {'min_digits_a': 3, 'max_digits_a': 4, 'min_digits_b': 2, 'max_digits_b': 4, 'time_limit': 10},
-                    'multiplication': {'min_digits_a': 2, 'max_digits_a': 3, 'min_digits_b': 2, 'max_digits_b': 3, 'time_limit': 25},
-                    'division': {'min_digits_dividend': 3, 'max_digits_dividend': 4, 'min_digits_divisor': 2, 'max_digits_divisor': 2, 'time_limit': 40}
-                }
-                st.success("超上級レベルに設定しました！")
-                st.rerun()
-    
-    if st.button("🚀 ゲーム開始", type="primary", use_container_width=True):
-        start_game()
-        st.rerun()
-
-elif st.session_state.game_state == 'playing':
-    # 時間切れチェック（タイムアタックモード）
-    if is_time_up():
-        st.session_state.game_state = 'result'
-        st.rerun()
-    
-    # 問題ごとの制限時間チェック
-    if is_question_time_up() and not st.session_state.time_limit_exceeded:
-        st.session_state.time_limit_exceeded = True
-        # 制限時間オーバーとして処理
-        is_correct, question_time, time_limit_exceeded = check_answer(-
+                    'division': {'min_digits_dividend': 2, 'max_digits_dividend': 3, 'min_digi
