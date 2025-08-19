@@ -559,4 +559,4 @@ elif st.session_state.game_state == 'result':
                     st.metric("正解時の平均時間", f"{sum(correct_times)/len(correct_times):.2f}秒")
             with col2:
                 if incorrect_times:
-                    st.metric("不正解時
+                    st.metric("不正解時")
