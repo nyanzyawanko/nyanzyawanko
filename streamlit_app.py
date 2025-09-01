@@ -244,9 +244,11 @@ with col2:
                        unsafe_allow_html=True)
             
             # タイマー表示
+            timer_placeholder = st.empty()
+            
             if remaining_time > 0:
                 timer_class = "timer-warning" if remaining_time <= 3 else "timer-normal"
-                st.markdown(f'<div class="timer-display {timer_class}">⏰ {remaining_time:.1f}秒</div>', 
+                timer_placeholder.markdown(f'<div class="timer-display {timer_class}">⏰ {int(remaining_time)}秒</div>', 
                            unsafe_allow_html=True)
                 
                 # 答え入力フォーム
@@ -290,6 +292,10 @@ with col2:
                     st.session_state.game_state = 'menu'
                     st.session_state.feedback = ""
                     st.rerun()
+                
+                # 1秒ごとの自動更新
+                time.sleep(1)
+                st.rerun()
                 
             else:
                 # 時間切れの場合
