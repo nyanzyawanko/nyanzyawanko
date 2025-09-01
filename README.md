@@ -498,3 +498,4 @@ if st.session_state.game_state == 'menu':
                     'subtraction': {'min_digits_a': 2, 'max_digits_a': 3, 'min_digits_b': 2, 'max_digits_b': 3, 'time_limit': 15},
                     'multiplication': {'min_digits_a': 2, 'max_digits_a': 2, 'min_digits_b': 1, 'max_digits_b': 2, 'time_limit': 20},
                     'division': {'min_digits_dividend': 2, 'max_digits_dividend': 3, 'min_digi
+                    
